@@ -1,9 +1,9 @@
+from flask import Flask, request, jsonify
 import os
 import pandas as pd
 import re
 import string
 import nltk
-from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
@@ -14,8 +14,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import mean_absolute_error
 from sklearn.utils import shuffle
-from statistics import mode
 from sklearn.ensemble import VotingClassifier
+
+app = Flask(__name__)
 
 # wajib
 # nltk.download('punkt')
@@ -36,9 +37,6 @@ def preprocess(text):
     # Tokenizing (mengubah teks menjadi token)
     tokens = nltk.word_tokenize(text)
 
-    # Filtering (menghapus karakter yang tidak diperlukan)
-    tokens = [token for token in tokens if token not in string.punctuation]
-
     # Stemming (mengubah kata-kata menjadi bentuk dasarnya)
     stemmer = PorterStemmer()
     tokens = [stemmer.stem(token) for token in tokens]
@@ -52,41 +50,42 @@ def preprocess(text):
 texts = []
 for i in range(len(judul)):
     text = judul[i] + ' ' + abstrak[i]
-    preprocessed_text = preprocess(text)
-    texts.append(preprocessed_text)
+    texts.append(text)
+
+# Lakukan stemming pada semua teks
+stemmed_texts = [preprocess(text) for text in texts]
+
+# Ekstraksi fitur TF-IDF setelah stemming
+vectorizer = TfidfVectorizer()
+tfidf_matrix = vectorizer.fit_transform(stemmed_texts)
 
 # Bagi data menjadi data latihan dan data pengujian
-texts_train, texts_test, labels_train, labels_test = train_test_split(texts, kelas, test_size=0.2, random_state=42)
+tfidf_train, tfidf_test, labels_train, labels_test = train_test_split(tfidf_matrix, kelas, test_size=0.2, random_state=60)
 
 # Mengubah label string menjadi representasi numerik menggunakan LabelEncoder
 label_encoder = LabelEncoder()
 numerical_labels_train = label_encoder.fit_transform(labels_train)
 numerical_labels_test = label_encoder.transform(labels_test)
 
-# Konversi teks menjadi vektor TF-IDF
-vectorizer = TfidfVectorizer()
-tfidf_train = vectorizer.fit_transform(texts_train)
-tfidf_test = vectorizer.transform(texts_test)
-
 # Inisialisasi model klasifikasi Naive Bayes, SVM dan KNN
 classifier = MultinomialNB()
-svm_classifier = SVC()
-knn_classifier = KNeighborsClassifier()
+svm_classifier = SVC(C=50, kernel="rbf", gamma="scale")
+knn_classifier = KNeighborsClassifier(n_neighbors=4)
 
-# Melatih model NB, SVM, KNN
+# Melatih model NB, SVM, KNN pada tfidf_train
 classifier.fit(tfidf_train, labels_train)
 svm_classifier.fit(tfidf_train, labels_train)
 knn_classifier.fit(tfidf_train, labels_train)
 
 # Select a single test data point
-single_test_text = texts_test[0]
+single_test_text = stemmed_texts[0]
 single_label = labels_test[0]
 
 # Convert the test text to TF-IDF vector
 single_tfidf_test = vectorizer.transform([single_test_text])
 
 # Shuffle the testing data indices
-texts_test, labels_test = shuffle(texts_test, labels_test, random_state=42)
+tfidf_test, labels_test = shuffle(tfidf_test, labels_test, random_state=60)
 
 # Predictions for the entire shuffled testing set
 nb_predictions = classifier.predict(tfidf_test)
@@ -121,7 +120,7 @@ ensemble_classifier = VotingClassifier(estimators=[
 # Latih ensemble classifier dengan data latihan
 ensemble_classifier.fit(tfidf_train, numerical_labels_train)
 
-# Melakukan prediksi dengan ensemble classifier pada data uji
+# Melakukan prediksi dengan ensemble classifier pada tfidf_test
 ensemble_test_prediction = ensemble_classifier.predict(tfidf_test)
 
 # Menghitung akurasi ensemble
@@ -147,36 +146,74 @@ print("Ensemble MAE:", mae_ensemble)
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    test_title = request.form.get('judul')
-    test_abstract = request.form.get('abstrak')
+    data = request.json.get('data', [])  # Menggunakan json() untuk mendapatkan data dalam format JSON
+    predictions = []
 
-    # Menggabungkan judul dan abstrak menjadi satu teks
-    test_text = test_title + ' ' + test_abstract
+    for item in data:
+        test_title = item['judul']
+        test_abstract = item['abstrak']
 
-    # Pra-pemrosesan teks uji
-    preprocessed_test_text = preprocess(test_text)
+        # Menggabungkan judul dan abstrak menjadi satu teks
+        test_text = test_title + ' ' + test_abstract
 
-    # Konversi teks uji menjadi vektor TF-IDF
-    tfidf_test_text = vectorizer.transform([preprocessed_test_text])
+        # Pra-pemrosesan teks uji
+        preprocessed_test_text = preprocess(test_text)
 
-    # Melakukan prediksi dengan ensemble classifier pada data uji
-    ensemble_test_prediction = ensemble_classifier.predict(tfidf_test_text)
+        # Konversi teks uji menjadi vektor TF-IDF
+        tfidf_test_text = vectorizer.transform([preprocess(preprocessed_test_text)])
 
-    # Mengubah prediksi menjadi label kelas
-    predicted_class = label_encoder.inverse_transform(ensemble_test_prediction)
+        # Melakukan prediksi dengan model SVM
+        svm_prediction = svm_classifier.predict(tfidf_test_text)[0]
+
+        # Melakukan prediksi dengan model KNN
+        knn_prediction = knn_classifier.predict(tfidf_test_text)[0]
+
+        # Melakukan prediksi dengan model Naive Bayes
+        nb_prediction = classifier.predict(tfidf_test_text)[0]
+
+        # Melakukan prediksi dengan ensemble classifier pada tfidf_test
+        ensemble_test_prediction = ensemble_classifier.predict(tfidf_test_text)
+
+        # Mengubah prediksi menjadi label kelas
+        predicted_class = label_encoder.inverse_transform(ensemble_test_prediction)
+
+        numerical_nb = label_encoder.transform([nb_prediction])
+        numerical_svm = label_encoder.transform([svm_prediction])
+        numerical_knn = label_encoder.transform([knn_prediction])
+
+        # Menghitung MAE untuk masing-masing model
+        svm_mae = mean_absolute_error(numerical_labels_test, numerical_svm)
+        knn_mae = mean_absolute_error(numerical_labels_test, numerical_knn)
+        nb_mae = mean_absolute_error(numerical_labels_test, numerical_nb)
+
+        # Menambahkan hasil prediksi ke dalam list
+        predictions.append({
+            'judul': test_title,
+            'abstrak': test_abstract,
+            'svm_prediction': svm_prediction,
+            'knn_prediction': knn_prediction,
+            'nb_prediction': nb_prediction,
+            'ensemble_prediksi' : predicted_class[0],
+            'svm_accuracy' : svm_accuracy,
+            'knn_accuracy' : knn_accuracy,
+            'nb_accuracy' : nb_accuracy,
+            'ensemble_accuracy' : ensemble_accuracy,
+            'svm_mae': svm_mae,
+            'knn_mae': knn_mae,
+            'nb_mae': nb_mae,
+            # 'ensemble_mae': ensemble_mae
+        })
 
     # Menyiapkan hasil prediksi untuk respons API
     response = {
-        "input_judul": test_title,
-        "input_abstrak": test_abstract,
-        "predicted_class": predicted_class[0]  # Karena hasil prediksi adalah array, kita ambil elemen pertama
+        "predictions": predictions
     }
 
     return jsonify(response)
+
+
 
 if __name__ == '__main__':
     # ... Kode yang ada sebelumnya ...
 
     app.run(debug=True)
-
-
