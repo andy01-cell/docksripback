@@ -15,10 +15,13 @@ from sklearn.metrics import accuracy_score
 from sklearn.metrics import mean_absolute_error
 from sklearn.utils import shuffle
 from sklearn.ensemble import VotingClassifier
+from nltk.corpus import stopwords
+
 
 app = Flask(__name__)
 
 # wajib
+nltk.download('stopwords')
 # nltk.download('punkt')
 
 # Membaca dataset dari file CSV
@@ -29,6 +32,14 @@ judul = dataframe['judul'].values
 abstrak = dataframe['abstrak'].values
 kelas = dataframe['class'].values
 
+# Daftar stopwords untuk bahasa Indonesia
+stop_words = set(stopwords.words('indonesian'))
+
+# Fungsi untuk menghapus stopwords dari token
+def remove_stopwords(tokens):
+    filtered_tokens = [word for word in tokens if word not in stop_words]
+    return filtered_tokens
+
 # Pra-pemrosesan data
 def preprocess(text):
     # Case folding (mengubah teks menjadi huruf kecil)
@@ -36,6 +47,9 @@ def preprocess(text):
 
     # Tokenizing (mengubah teks menjadi token)
     tokens = nltk.word_tokenize(text)
+
+    # Menghapus stopwords
+    tokens = remove_stopwords(tokens)
 
     # Stemming (mengubah kata-kata menjadi bentuk dasarnya)
     stemmer = PorterStemmer()
@@ -77,6 +91,7 @@ classifier.fit(tfidf_train, labels_train)
 svm_classifier.fit(tfidf_train, labels_train)
 knn_classifier.fit(tfidf_train, labels_train)
 
+#testing
 # Select a single test data point
 single_test_text = stemmed_texts[0]
 single_label = labels_test[0]
@@ -144,6 +159,7 @@ print("Ensemble Accuracy:", ensemble_accuracy)
 print("Ensemble MAE:", mae_ensemble)
 
 
+#data uji
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.json.get('data', [])  # Menggunakan json() untuk mendapatkan data dalam format JSON
