@@ -16,6 +16,8 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.utils import shuffle
 from sklearn.ensemble import VotingClassifier
 from nltk.corpus import stopwords
+from sklearn.model_selection import cross_val_score
+import time
 
 
 app = Flask(__name__)
@@ -25,7 +27,7 @@ nltk.download('stopwords')
 # nltk.download('punkt')
 
 # Membaca dataset dari file CSV
-dataframe = pd.read_csv('dataset/1.csv', encoding='ISO-8859-1')
+dataframe = pd.read_csv('dataset/data2.csv', encoding='ISO-8859-1', delimiter=';')
 
 # Atribut judul, abstrak, dan class pada dataset
 judul = dataframe['judul'].values
@@ -73,90 +75,14 @@ stemmed_texts = [preprocess(text) for text in texts]
 vectorizer = TfidfVectorizer()
 tfidf_matrix = vectorizer.fit_transform(stemmed_texts)
 
-# Bagi data menjadi data latihan dan data pengujian
-tfidf_train, tfidf_test, labels_train, labels_test = train_test_split(tfidf_matrix, kelas, test_size=0.2, random_state=60)
+for i, (judul_i, abstrak_i, stemmed_text_i) in enumerate(zip(judul[:5], abstrak[:5], stemmed_texts[:5])):
+    print(f"Data ke-{i + 1}:")
+    print(f"  Judul: {judul[i]}")
+    print(f"  Abstrak: {abstrak[i]}")
+    print(f"  Kelas: {kelas[i]}")
+    print(f"  Hasil setelah preprocessing: {stemmed_texts[i]}\n")
 
-# Mengubah label string menjadi representasi numerik menggunakan LabelEncoder
-label_encoder = LabelEncoder()
-numerical_labels_train = label_encoder.fit_transform(labels_train)
-numerical_labels_test = label_encoder.transform(labels_test)
 
-# Inisialisasi model klasifikasi Naive Bayes, SVM dan KNN
-classifier = MultinomialNB()
-svm_classifier = SVC(C=50, kernel="rbf", gamma="scale")
-knn_classifier = KNeighborsClassifier(n_neighbors=4)
-
-# Melatih model NB, SVM, KNN pada tfidf_train
-classifier.fit(tfidf_train, labels_train)
-svm_classifier.fit(tfidf_train, labels_train)
-knn_classifier.fit(tfidf_train, labels_train)
-
-#testing
-# Select a single test data point
-single_test_text = stemmed_texts[0]
-single_label = labels_test[0]
-
-# Convert the test text to TF-IDF vector
-single_tfidf_test = vectorizer.transform([single_test_text])
-
-# Shuffle the testing data indices
-tfidf_test, labels_test = shuffle(tfidf_test, labels_test, random_state=60)
-
-# Predictions for the entire shuffled testing set
-nb_predictions = classifier.predict(tfidf_test)
-svm_predictions = svm_classifier.predict(tfidf_test)
-knn_predictions = knn_classifier.predict(tfidf_test)
-
-# Calculate accuracies
-nb_accuracy = accuracy_score(labels_test, nb_predictions)
-svm_accuracy = accuracy_score(labels_test, svm_predictions)
-knn_accuracy = accuracy_score(labels_test, knn_predictions)
-
-# Convert the string labels to numerical representations using LabelEncoder
-label_encoder = LabelEncoder()
-numerical_labels_train = label_encoder.fit_transform(labels_train)
-numerical_labels_test = label_encoder.transform(labels_test)
-numerical_nb_predictions = label_encoder.transform(nb_predictions)
-numerical_svm_predictions = label_encoder.transform(svm_predictions)
-numerical_knn_predictions = label_encoder.transform(knn_predictions)
-
-# Calculate MAE
-mae_nb = mean_absolute_error(numerical_labels_test, numerical_nb_predictions)
-mae_svm = mean_absolute_error(numerical_labels_test, numerical_svm_predictions)
-mae_knn = mean_absolute_error(numerical_labels_test, numerical_knn_predictions)
-
-# Buat objek ensemble classifier dengan model yang ada
-ensemble_classifier = VotingClassifier(estimators=[
-    ('nb', classifier),
-    ('svm', svm_classifier),
-    ('knn', knn_classifier)
-], voting='hard')  # 'hard' untuk voting mayoritas
-
-# Latih ensemble classifier dengan data latihan
-ensemble_classifier.fit(tfidf_train, numerical_labels_train)
-
-# Melakukan prediksi dengan ensemble classifier pada tfidf_test
-ensemble_test_prediction = ensemble_classifier.predict(tfidf_test)
-
-# Menghitung akurasi ensemble
-ensemble_accuracy = accuracy_score(numerical_labels_test, ensemble_test_prediction)
-
-# Menghitung MAE ensemble
-mae_ensemble = mean_absolute_error(numerical_labels_test, ensemble_test_prediction)
-
-print("Actual Label:", single_label)
-print("Naive Bayes Prediction:", nb_predictions)
-print("SVM Prediction:", svm_predictions)
-print("KNN Prediction:", knn_predictions)
-print("Naive Bayes Accuracy:", nb_accuracy)
-print("SVM Accuracy:", svm_accuracy)
-print("KNN Accuracy:", knn_accuracy)
-print("Naive Bayes MAE:", mae_nb)
-print("SVM MAE:", mae_svm)
-print("KNN MAE:", mae_knn)
-print("Ensemble Prediction:", ensemble_test_prediction)
-print("Ensemble Accuracy:", ensemble_accuracy)
-print("Ensemble MAE:", mae_ensemble)
 
 
 #data uji
@@ -164,6 +90,108 @@ print("Ensemble MAE:", mae_ensemble)
 def predict():
     data = request.json.get('data', [])  # Menggunakan json() untuk mendapatkan data dalam format JSON
     predictions = []
+
+    # Bagi data menjadi data latihan dan data pengujian
+    tfidf_train, tfidf_test, labels_train, labels_test = train_test_split(tfidf_matrix, kelas, test_size=0.2,
+                                                                          random_state=int(time.time()))
+
+    # Mengubah label string menjadi representasi numerik menggunakan LabelEncoder
+    label_encoder = LabelEncoder()
+    numerical_labels_train = label_encoder.fit_transform(labels_train)
+    numerical_labels_test = label_encoder.transform(labels_test)
+
+    # Inisialisasi model klasifikasi Naive Bayes, SVM dan KNN
+    classifier = MultinomialNB()
+    svm_classifier = SVC(C=50, kernel="rbf", gamma="scale")
+    knn_classifier = KNeighborsClassifier(n_neighbors=4)
+
+    # Lakukan cross-validation untuk Naive Bayes
+    nb_cv_scores = cross_val_score(classifier, tfidf_matrix, kelas,
+                                   cv=5)  # You can adjust the number of folds (cv) as needed
+    nb_cv_accuracy = nb_cv_scores.mean()
+
+    # Lakukan cross-validation untuk SVM
+    svm_cv_scores = cross_val_score(svm_classifier, tfidf_matrix, kelas, cv=5)
+    svm_cv_accuracy = svm_cv_scores.mean()
+
+    # Lakukan cross-validation untuk KNN
+    knn_cv_scores = cross_val_score(knn_classifier, tfidf_matrix, kelas, cv=5)
+    knn_cv_accuracy = knn_cv_scores.mean()
+
+    # Melatih model NB, SVM, KNN pada tfidf_train
+    classifier.fit(tfidf_train, labels_train)
+    svm_classifier.fit(tfidf_train, labels_train)
+    knn_classifier.fit(tfidf_train, labels_train)
+
+    # testing
+    # Select a single test data point
+    single_test_text = stemmed_texts[0]
+    single_label = labels_test[0]
+
+    # Convert the test text to TF-IDF vector
+    single_tfidf_test = vectorizer.transform([single_test_text])
+
+    # Shuffle the testing data indices
+    tfidf_test, labels_test = shuffle(tfidf_test, labels_test, random_state=int(time.time()))
+
+    # Predictions for the entire shuffled testing set
+    nb_predictions = classifier.predict(tfidf_test)
+    svm_predictions = svm_classifier.predict(tfidf_test)
+    knn_predictions = knn_classifier.predict(tfidf_test)
+
+    # Calculate accuracies
+    nb_accuracy = accuracy_score(labels_test, nb_predictions)
+    svm_accuracy = accuracy_score(labels_test, svm_predictions)
+    knn_accuracy = accuracy_score(labels_test, knn_predictions)
+
+    # Convert the string labels to numerical representations using LabelEncoder
+    label_encoder = LabelEncoder()
+    numerical_labels_train = label_encoder.fit_transform(labels_train)
+    numerical_labels_test = label_encoder.transform(labels_test)
+    numerical_nb_predictions = label_encoder.transform(nb_predictions)
+    numerical_svm_predictions = label_encoder.transform(svm_predictions)
+    numerical_knn_predictions = label_encoder.transform(knn_predictions)
+
+    # Calculate MAE
+    mae_nb = mean_absolute_error(numerical_labels_test, numerical_nb_predictions)
+    mae_svm = mean_absolute_error(numerical_labels_test, numerical_svm_predictions)
+    mae_knn = mean_absolute_error(numerical_labels_test, numerical_knn_predictions)
+
+    # Buat objek ensemble classifier dengan model yang ada
+    ensemble_classifier = VotingClassifier(estimators=[
+        ('nb', classifier),
+        ('svm', svm_classifier),
+        ('knn', knn_classifier)
+    ], voting='hard')  # 'hard' untuk voting mayoritas
+
+    # Latih ensemble classifier dengan data latihan
+    ensemble_classifier.fit(tfidf_train, numerical_labels_train)
+
+    # Melakukan prediksi dengan ensemble classifier pada tfidf_test
+    ensemble_test_prediction = ensemble_classifier.predict(tfidf_test)
+
+    # Menghitung akurasi ensemble
+    ensemble_accuracy = accuracy_score(numerical_labels_test, ensemble_test_prediction)
+
+    # Menghitung MAE ensemble
+    mae_ensemble = mean_absolute_error(numerical_labels_test, ensemble_test_prediction)
+
+    print("Actual Label:", single_label)
+    print("Naive Bayes Prediction:", nb_predictions)
+    print("SVM Prediction:", svm_predictions)
+    print("KNN Prediction:", knn_predictions)
+    print("Naive Bayes Accuracy:", nb_accuracy)
+    print("SVM Accuracy:", svm_accuracy)
+    print("KNN Accuracy:", knn_accuracy)
+    print("Naive Bayes Cross-Validation Accuracy:", nb_cv_accuracy)
+    print("SVM Cross-Validation Accuracy:", svm_cv_accuracy)
+    print("KNN Cross-Validation Accuracy:", knn_cv_accuracy)
+    print("Naive Bayes MAE:", mae_nb)
+    print("SVM MAE:", mae_svm)
+    print("KNN MAE:", mae_knn)
+    print("Ensemble Prediction:", ensemble_test_prediction)
+    print("Ensemble Accuracy:", ensemble_accuracy)
+    print("Ensemble MAE:", mae_ensemble)
 
     for item in data:
         test_title = item['judul']
