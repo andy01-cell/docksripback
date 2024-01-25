@@ -27,7 +27,7 @@ nltk.download('stopwords')
 # nltk.download('punkt')
 
 # Membaca dataset dari file CSV
-dataframe = pd.read_csv('dataset/data2.csv', encoding='ISO-8859-1', delimiter=';')
+dataframe = pd.read_csv('dataset/335a.csv', encoding='ISO-8859-1', delimiter=',')
 
 # Atribut judul, abstrak, dan class pada dataset
 judul = dataframe['judul'].values
@@ -81,7 +81,6 @@ for i, (judul_i, abstrak_i, stemmed_text_i) in enumerate(zip(judul[:5], abstrak[
     print(f"  Abstrak: {abstrak[i]}")
     print(f"  Kelas: {kelas[i]}")
     print(f"  Hasil setelah preprocessing: {stemmed_texts[i]}\n")
-
 
 
 
@@ -164,6 +163,10 @@ def predict():
         ('knn', knn_classifier)
     ], voting='hard')  # 'hard' untuk voting mayoritas
 
+    # Lakukan cross-validation untuk ensemble model
+    ensemble_cv_scores = cross_val_score(ensemble_classifier, tfidf_train, numerical_labels_train, cv=5)
+    ensemble_cv_accuracy = ensemble_cv_scores.mean()
+
     # Latih ensemble classifier dengan data latihan
     ensemble_classifier.fit(tfidf_train, numerical_labels_train)
 
@@ -186,6 +189,7 @@ def predict():
     print("Naive Bayes Cross-Validation Accuracy:", nb_cv_accuracy)
     print("SVM Cross-Validation Accuracy:", svm_cv_accuracy)
     print("KNN Cross-Validation Accuracy:", knn_cv_accuracy)
+    print("Ensemble Cross-Validation Accuracy:", ensemble_cv_accuracy)
     print("Naive Bayes MAE:", mae_nb)
     print("SVM MAE:", mae_svm)
     print("KNN MAE:", mae_knn)
@@ -242,6 +246,10 @@ def predict():
         "svmmae": mae_svm,
         "knnmae": mae_knn,
         "ensemblemae": mae_ensemble,
+        "cv_nb" : nb_cv_accuracy,
+        "cv_svm" : svm_cv_accuracy,
+        "cv_knn" : knn_cv_accuracy,
+        "cv_ensemble" : ensemble_cv_accuracy
     }
     return jsonify(response)
 
