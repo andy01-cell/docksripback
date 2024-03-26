@@ -1,0 +1,5 @@
+Kelas,Kata,Bobot
+dse,[['dosen' 'musik' 'mahasiswa' ... 'pemeliharaan' 'pemenang' '000']],[[0.20233106 0.16758514 0.16516503 ... 0.         0.         0.        ]]
+DSE,[['aplikasi' 'penelitian' 'sistem' ... 'off' 'ocr' 'membudidayakan']],[[0.0611838  0.05776937 0.04203106 ... 0.         0.         0.        ]]
+IS,[['penyakit' 'penelitian' 'sistem' ... 'panutan' 'papan' '000']],[[0.05590456 0.05123595 0.05094011 ... 0.         0.         0.        ]]
+IoTNAT,[['alat' 'penelitian' 'mikrokontrol' ... 'merawat' 'merasakan' '000']],[[0.06907789 0.0595081  0.0469238  ... 0.         0.         0.        ]]
