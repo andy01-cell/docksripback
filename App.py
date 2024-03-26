@@ -18,7 +18,7 @@ from sklearn.ensemble import VotingClassifier
 from nltk.corpus import stopwords
 from sklearn.model_selection import cross_val_score
 import time
-import json
+import numpy as np
 
 app = Flask(__name__)
 
@@ -74,15 +74,6 @@ stemmed_texts = [preprocess(text) for text in texts]
 # Ekstraksi fitur TF-IDF setelah stemming
 vectorizer = TfidfVectorizer()
 tfidf_matrix = vectorizer.fit_transform(stemmed_texts)
-
-for i, (judul_i, abstrak_i, stemmed_text_i) in enumerate(zip(judul[:5], abstrak[:5], stemmed_texts[:5])):
-    print(f"Data ke-{i + 1}:")
-    print(f"  Judul: {judul[i]}")
-    print(f"  Abstrak: {abstrak[i]}")
-    print(f"  Kelas: {kelas[i]}")
-    print(f"  Hasil setelah preprocessing: {stemmed_texts[i]}\n")
-
-
 
 #data uji
 @app.route('/predict', methods=['POST'])
@@ -197,71 +188,110 @@ def predict():
     print("Ensemble Accuracy:", ensemble_accuracy)
     print("Ensemble MAE:", mae_ensemble)
 
-    # Membuat vektor TF-IDF untuk satu dokumen
-    tfidf_vector_single = tfidf_matrix[0]
+    for item in data:
+        test_title = item['judul']
+        test_abstract = item['abstrak']
 
-    # Mendapatkan indeks dan bobot untuk setiap fitur dalam vektor
-    feature_names = vectorizer.get_feature_names_out()
-    indices = tfidf_vector_single.indices
-    data = tfidf_vector_single.data
+        # Menggabungkan judul dan abstrak menjadi satu teks
+        test_text = test_title + ' ' + test_abstract
 
-    # Membuat kamus untuk memetakan indeks fitur ke bobotnya
-    feature_weights = {}
-    for index, weight in zip(indices, data):
-        feature_weights[index] = weight
+        # Pra-pemrosesan teks uji
+        preprocessed_test_text = preprocess(test_text)
 
-    # Mengurutkan bobot fitur berdasarkan nilai bobotnya
-    sorted_feature_indices = sorted(feature_weights, key=feature_weights.get, reverse=True)
+        # Konversi teks uji menjadi vektor TF-IDF
+        tfidf_test_text = vectorizer.transform([preprocess(preprocessed_test_text)])
 
-    # Inisialisasi struktur data untuk menyimpan kata-kata teratas berdasarkan kelas
-    top_words_by_class = {label: [] for label in set(kelas)}
+        # Melakukan prediksi dengan model SVM
+        svm_prediction = svm_classifier.predict(tfidf_test_text)[0]
 
-    # Mengumpulkan kata-kata teratas untuk setiap kelas
-    for label in set(kelas):
-        class_indices = [i for i, lbl in enumerate(kelas) if lbl == label]
-        class_tfidf_matrix = tfidf_matrix[class_indices]
-        class_top_words = []
+        # Melakukan prediksi dengan model KNN
+        knn_prediction = knn_classifier.predict(tfidf_test_text)[0]
 
-        for doc in class_tfidf_matrix:
-            feature_indices = doc.indices
-            feature_data = doc.data
+        # Melakukan prediksi dengan model Naive Bayes
+        nb_prediction = classifier.predict(tfidf_test_text)[0]
 
-            # Membuat kamus untuk memetakan indeks fitur ke bobotnya
-            feature_weights = {}
-            for index, weight in zip(feature_indices, feature_data):
-                feature_weights[index] = weight
+        # Melakukan prediksi dengan ensemble classifier pada tfidf_test
+        ensemble_test_prediction = ensemble_classifier.predict(tfidf_test_text)
 
-            # Mengurutkan bobot fitur berdasarkan nilai bobotnya
-            sorted_feature_indices = sorted(feature_weights, key=feature_weights.get, reverse=True)
+        # Mengubah prediksi menjadi label kelas
+        predicted_class = label_encoder.inverse_transform(ensemble_test_prediction)
 
-            # Mengambil kata-kata teratas untuk kelas ini
-            for index in sorted_feature_indices[:10]:
-                word = feature_names[index]
-                weight = feature_weights[index]
-                class_top_words.append({'word': word, 'weight': weight})
+        # Menambahkan hasil prediksi ke dalam list
+        predictions.append({
+            'judul': test_title,
+            'abstrak': test_abstract,
+            'svm_prediction': svm_prediction,
+            'knn_prediction': knn_prediction,
+            'nb_prediction': nb_prediction,
+            'ensemble_prediksi' : predicted_class[0],
 
-        # Menambahkan kata-kata teratas ke struktur data untuk kelas ini
-        top_words_by_class[label] = class_top_words
+        })
 
-        # Inisialisasi list kosong untuk menyimpan data yang akan dimasukkan ke dalam dataframe
-        data = []
+        # Membuat vektor TF-IDF untuk satu dokumen
+        tfidf_vector_single = tfidf_matrix[0]
 
-        # Iterasi melalui struktur data top_words_by_class untuk menyusunnya menjadi format yang sesuai untuk dataframe
-        for label, top_words in top_words_by_class.items():
-            for word_info in top_words:
-                data.append({'kelas': label, 'word': word_info['word'], 'weight': word_info['weight']})
+        # Mendapatkan indeks dan bobot untuk setiap fitur dalam vektor
+        feature_names = vectorizer.get_feature_names_out()
+        indices = tfidf_vector_single.indices
+        data = tfidf_vector_single.data
 
-        # Membuat dataframe dari data yang disusun
-        df_top_words_by_class = pd.DataFrame(data)
+        # Membuat kamus untuk memetakan indeks fitur ke bobotnya
+        feature_weights = {}
+        for index, weight in zip(indices, data):
+            feature_weights[index] = weight
 
-        # Menyimpan dataframe ke dalam file Excel
-        df_top_words_by_class.to_excel('top_words_by_class.xlsx', index=False)
+        # Mengurutkan bobot fitur berdasarkan nilai bobotnya
+        sorted_feature_indices = sorted(feature_weights, key=feature_weights.get, reverse=True)
 
-        # # Menyimpan struktur data ke dalam file JSON
-        # with open('top_words_by_class.json', 'w') as json_file:
-        #     json.dump(top_words_by_class, json_file)
+        # Inisialisasi struktur data untuk menyimpan kata-kata teratas berdasarkan kelas
+        top_words_by_class = {label: [] for label in set(kelas)}
 
-    # Menyiapkan hasil prediksi untuk respons API
+        # Mengumpulkan kata-kata teratas untuk setiap kelas
+        for label in set(kelas):
+            class_indices = [i for i, lbl in enumerate(kelas) if lbl == label]
+            class_tfidf_matrix = tfidf_matrix[class_indices]
+            class_top_words = []
+
+            for doc in class_tfidf_matrix:
+                feature_indices = doc.indices
+                feature_data = doc.data
+
+                # Membuat kamus untuk memetakan indeks fitur ke bobotnya
+                feature_weights = {}
+                for index, weight in zip(feature_indices, feature_data):
+                    feature_weights[index] = weight
+
+                # Mengurutkan bobot fitur berdasarkan nilai bobotnya
+                sorted_feature_indices = sorted(feature_weights, key=feature_weights.get, reverse=True)
+
+                # Mengambil kata-kata teratas untuk kelas ini
+                for index in sorted_feature_indices[:10]:
+                    word = feature_names[index]
+                    weight = feature_weights[index]
+                    class_top_words.append({'word': word, 'weight': weight})
+
+            # Menambahkan kata-kata teratas ke struktur data untuk kelas ini
+            top_words_by_class[label] = class_top_words
+
+            # Inisialisasi list kosong untuk menyimpan data yang akan dimasukkan ke dalam dataframe
+            data = []
+
+            # Iterasi melalui struktur data top_words_by_class untuk menyusunnya menjadi format yang sesuai untuk dataframe
+            for label, top_words in top_words_by_class.items():
+                for word_info in top_words:
+                    data.append({'kelas': label, 'word': word_info['word'], 'weight': word_info['weight']})
+
+            # Membuat dataframe dari data yang disusun
+            df_top_words_by_class = pd.DataFrame(data)
+
+            # Menyimpan dataframe ke dalam file Excel
+            df_top_words_by_class.to_excel('top_words_by_class.xlsx', index=False)
+
+            # # Menyimpan struktur data ke dalam file JSON
+            # with open('top_words_by_class.json', 'w') as json_file:
+            #     json.dump(top_words_by_class, json_file)
+
+    # Menambahkan hasil TF-IDF untuk 10 kata teratas bersama dengan kelas dan bobotnya ke dalam respons API
     response = {
         "predictions": predictions,
         "nbakurasi": nb_accuracy,
@@ -276,10 +306,10 @@ def predict():
         "cv_svm": svm_cv_accuracy,
         "cv_knn": knn_cv_accuracy,
         "cv_ensemble": ensemble_cv_accuracy,
-        "top_words_by_class": top_words_by_class
+        # "top_tfidf_features": top_features
     }
-    return jsonify(response)
 
+    return jsonify(response)
 
 if __name__ == '__main__':
     # ... Kode yang ada sebelumnya ...
