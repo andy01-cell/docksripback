@@ -4,7 +4,6 @@ import pandas as pd
 import re
 import string
 import nltk
-from nltk.stem import PorterStemmer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.svm import SVC
@@ -19,6 +18,7 @@ from nltk.corpus import stopwords
 from sklearn.model_selection import cross_val_score
 import time
 import numpy as np
+from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
 
 app = Flask(__name__)
 
@@ -44,17 +44,26 @@ def remove_stopwords(tokens):
 
 # Pra-pemrosesan data
 def preprocess(text):
+    symbols = "!\"#$%&()*+-./:;<=>?@[\]^_`{|}~\n"
     # Case folding (mengubah teks menjadi huruf kecil)
     text = text.lower()
 
+
+
     # Tokenizing (mengubah teks menjadi token)
     tokens = nltk.word_tokenize(text)
+
+    # #menghapus tanda baca
+    for i in symbols:
+        # print(sentence)
+        tokens = np.char.replace(tokens, i, ' ')
 
     # Menghapus stopwords
     tokens = remove_stopwords(tokens)
 
     # Stemming (mengubah kata-kata menjadi bentuk dasarnya)
-    stemmer = PorterStemmer()
+    factory = StemmerFactory()
+    stemmer = factory.create_stemmer()
     tokens = [stemmer.stem(token) for token in tokens]
 
     # Menggabungkan kembali token menjadi teks
@@ -197,9 +206,12 @@ def predict():
 
         # Pra-pemrosesan teks uji
         preprocessed_test_text = preprocess(test_text)
+        print("hasil :", preprocessed_test_text)
 
         # Konversi teks uji menjadi vektor TF-IDF
         tfidf_test_text = vectorizer.transform([preprocess(preprocessed_test_text)])
+
+
 
         # Melakukan prediksi dengan model SVM
         svm_prediction = svm_classifier.predict(tfidf_test_text)[0]
@@ -224,7 +236,6 @@ def predict():
             'knn_prediction': knn_prediction,
             'nb_prediction': nb_prediction,
             'ensemble_prediksi' : predicted_class[0],
-
         })
 
         # Membuat vektor TF-IDF untuk satu dokumen
@@ -306,7 +317,7 @@ def predict():
         "cv_svm": svm_cv_accuracy,
         "cv_knn": knn_cv_accuracy,
         "cv_ensemble": ensemble_cv_accuracy,
-        # "top_tfidf_features": top_features
+        # 'top_tfidf_features': top_features,
     }
 
     return jsonify(response)
